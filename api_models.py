@@ -20,9 +20,9 @@ class GenerationRequest(BaseModel):
         False,
         description="Whether to generate textures for the 3D model"
     )
-    seed: int = Field(
-        1234,
-        description="Random seed for reproducible generation",
+    seed: Optional[int] = Field(
+        None,
+        description="Random seed for reproducible generation. If omitted, a random seed is used.",
         ge=0,
         le=2**32-1
     )
@@ -79,4 +79,4 @@ class StatusResponse(BaseModel):
 class HealthResponse(BaseModel):
     """Response model for health check"""
     status: str = Field(..., description="Health status")
-    worker_id: str = Field(..., description="Worker identifier") 
+    worker_id: str = Field(..., description="Worker identifier")

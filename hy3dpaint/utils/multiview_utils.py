@@ -67,14 +67,14 @@ class multiviewDiffusionNet:
         os.environ["PL_GLOBAL_SEED"] = str(seed)
 
     @torch.no_grad()
-    def __call__(self, images, conditions, prompt=None, custom_view_size=None, resize_input=False):
+    def __call__(self, images, conditions, prompt=None, custom_view_size=None, resize_input=False, seed=0):
         pils = self.forward_one(
-            images, conditions, prompt=prompt, custom_view_size=custom_view_size, resize_input=resize_input
+            images, conditions, prompt=prompt, custom_view_size=custom_view_size, resize_input=resize_input, seed=seed
         )
         return pils
 
-    def forward_one(self, input_images, control_images, prompt=None, custom_view_size=None, resize_input=False):
-        self.seed_everything(0)
+    def forward_one(self, input_images, control_images, prompt=None, custom_view_size=None, resize_input=False, seed=0):
+        self.seed_everything(seed)
         custom_view_size = custom_view_size if custom_view_size is not None else self.pipeline.view_size
         if not isinstance(input_images, List):
             input_images = [input_images]
@@ -88,7 +88,7 @@ class multiviewDiffusionNet:
             control_images[i] = control_images[i].resize((custom_view_size, custom_view_size))
             if control_images[i].mode == "L":
                 control_images[i] = control_images[i].point(lambda x: 255 if x > 1 else 0, mode="1")
-        kwargs = dict(generator=torch.Generator(device=self.pipeline.device).manual_seed(0))
+        kwargs = dict(generator=torch.Generator(device=self.pipeline.device).manual_seed(seed))
 
         num_view = len(control_images) // 2
         normal_image = [[control_images[i] for i in range(num_view)]]

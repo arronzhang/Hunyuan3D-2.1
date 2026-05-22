@@ -90,7 +90,7 @@ class Hunyuan3DPaintPipeline:
         print("Models Loaded.")
 
     @torch.no_grad()
-    def __call__(self, mesh_path=None, image_path=None, output_mesh_path=None, use_remesh=True, save_glb=True):
+    def __call__(self, mesh_path=None, image_path=None, output_mesh_path=None, use_remesh=True, save_glb=True, seed=0):
         """Generate texture for 3D mesh using multiview diffusion"""
         # Ensure image_prompt is a list
         if isinstance(image_path, str):
@@ -151,6 +151,7 @@ class Hunyuan3DPaintPipeline:
             prompt=image_caption,
             custom_view_size=self.config.resolution,
             resize_input=True,
+            seed=seed,
         )
         ###########  Enhance  ##########
         enhance_images = {}

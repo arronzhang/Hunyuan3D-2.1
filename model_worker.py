@@ -171,9 +171,17 @@ class ModelWorker:
         else:
             image = image.convert("RGBA")
 
+        seed = params.get("seed")
+        if seed is None:
+            seed = uuid.uuid4().int % (2**32)
+        seed = int(seed)
+        logger.info(f"Using generation seed: {seed}")
+        generator_device = getattr(self.pipeline, "device", self.device)
+        generator = torch.Generator(device=generator_device).manual_seed(seed)
+
         # Generate mesh 
         try:
-            mesh = self.pipeline(image=image)[0]
+            mesh = self.pipeline(image=image, generator=generator)[0]
             logger.info("---Shape generation takes %s seconds ---" % (time.time() - start_time))
         except Exception as e:
             logger.error(f"Shape generation failed: {e}")
@@ -191,7 +199,8 @@ class ModelWorker:
                 mesh_path=initial_save_path,
                 image_path=image,
                 output_mesh_path=output_mesh_path_obj,
-                save_glb=False            
+                save_glb=False,
+                seed=seed,
             )
             logger.info("---Texture generation takes %s seconds ---" % (time.time() - start_time))
             logger.info(f"output_mesh_path: {output_mesh_path_obj} textured_path: {textured_path_obj}")
