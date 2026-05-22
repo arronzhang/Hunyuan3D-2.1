@@ -1,0 +1,26 @@
+{
+  "apps": [
+    {
+      "name": "hunyuan3d-api",
+      "cwd": ".",
+      "script": "./start_api_server.sh",
+      "interpreter": "bash",
+      "args": "--model_path /work/models/Hunyuan3D-2.1",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "watch": false,
+      "time": true,
+      "merge_logs": true,
+      "env": {
+        "HOST": "0.0.0.0",
+        "PORT": "8081",
+        "HUNYUAN_CUDA_HOME": "/usr/local/cuda-12.8",
+        "TORCH_CUDA_ARCH_LIST": "12.0",
+        "PYOPENGL_PLATFORM": "egl",
+        "DINO_CKPT_PATH": "/work/models/dinov2-giant",
+        "U2NET_HOME": "/work/models/rembg"
+      }
+    }
+  ]
+}

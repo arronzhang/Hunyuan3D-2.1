@@ -92,8 +92,8 @@ class ModelWorker:
         
         logger.info(f"Loading the model {model_path} on worker {self.worker_id} ...")
 
-        # Initialize background remover
-        self.rembg = BackgroundRemover()
+        # Load rembg lazily; otherwise API startup blocks on downloading u2net.onnx.
+        self.rembg = None
         
         # Initialize shape generation pipeline (matching demo.py)
         self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(model_path)
@@ -110,6 +110,8 @@ class ModelWorker:
         conf.realesrgan_ckpt_path = "hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
         conf.multiview_cfg_path = "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"
         conf.custom_pipeline = "hy3dpaint/hunyuanpaintpbr"
+        conf.multiview_pretrained_path = model_path
+        conf.dino_ckpt_path = os.environ.get("DINO_CKPT_PATH", "/work/models/dinov2-giant")
         self.paint_pipeline = Hunyuan3DPaintPipeline(conf)
         # clean cache in save_dir
         for file in os.listdir(self.save_dir):
@@ -161,10 +163,13 @@ class ModelWorker:
         else:
             raise ValueError("No input image provided")
 
-        # Convert to RGBA and remove background if needed
-        image = image.convert("RGBA")
-        if image.mode == "RGB":
-            image = self.rembg(image)
+        # Convert to RGBA and remove background if requested.
+        if params.get("remove_background", True) and image.mode != "RGBA":
+            if self.rembg is None:
+                self.rembg = BackgroundRemover()
+            image = self.rembg(image.convert("RGB")).convert("RGBA")
+        else:
+            image = image.convert("RGBA")
 
         # Generate mesh 
         try:
@@ -215,4 +220,4 @@ class ModelWorker:
             torch.cuda.empty_cache()
             
         logger.info("---Total generation takes %s seconds ---" % (time.time() - start_time))
-        return final_save_path, uid 
+        return final_save_path, uid
