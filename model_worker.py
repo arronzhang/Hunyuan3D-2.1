@@ -115,7 +115,9 @@ class ModelWorker:
         self.paint_pipeline = Hunyuan3DPaintPipeline(conf)
         # clean cache in save_dir
         for file in os.listdir(self.save_dir):
-            os.remove(os.path.join(self.save_dir, file))
+            file_path = os.path.join(self.save_dir, file)
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.remove(file_path)
             
     def get_queue_length(self):
         """
