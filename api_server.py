@@ -33,23 +33,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 
 # Import from root-level modules
-from api_models import GenerationRequest, GenerationResponse, StatusResponse, HealthResponse
+from api_models import GenerationRequest, MVGenerationRequest, GenerationResponse, StatusResponse, HealthResponse
 from logger_utils import build_logger
 from constants import (
     SERVER_ERROR_MSG, DEFAULT_SAVE_DIR, API_TITLE, API_DESCRIPTION, 
     API_VERSION, API_CONTACT, API_LICENSE_INFO, API_TAGS_METADATA
 )
 from model_worker import ModelWorker
+from mv_model_worker import MVModelWorker
 
 # Global variables
 SAVE_DIR = DEFAULT_SAVE_DIR
+MV_SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, "mv")
 worker_id = str(uuid.uuid4())[:6]
 os.makedirs(SAVE_DIR, exist_ok=True)
+os.makedirs(MV_SAVE_DIR, exist_ok=True)
 logger = build_logger("controller", f"{SAVE_DIR}/controller.log")
 
 # Global worker and semaphore instances
 worker = None
+mv_worker = None
+mv_worker_lock = threading.Lock()
 model_semaphore = None
+mv_model_semaphore = None
+server_args = None
 
 
 app = FastAPI(
@@ -69,6 +76,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def get_mv_worker():
+    global mv_worker
+    if mv_worker is None:
+        with mv_worker_lock:
+            if mv_worker is None:
+                if server_args is None:
+                    raise RuntimeError("Server arguments are not initialized.")
+                mv_worker = MVModelWorker(
+                    model_path=server_args.mv_model_path,
+                    subfolder=server_args.mv_subfolder,
+                    device=server_args.device,
+                    worker_id=worker_id,
+                    model_semaphore=mv_model_semaphore,
+                    save_dir=MV_SAVE_DIR,
+                    mc_algo=server_args.mc_algo,
+                    compile=server_args.compile,
+                )
+    return mv_worker
 
 
 @app.post("/generate", tags=["generation"])
@@ -116,6 +143,47 @@ async def generate_3d_model(request: GenerationRequest):
         return JSONResponse(ret, status_code=404)
 
 
+@app.post("/generate_mv", tags=["generation"])
+@app.post("/generate/mv", tags=["generation"])
+async def generate_mv_3d_model(request: MVGenerationRequest):
+    """
+    Generate a 3D model from multiview input images with Hunyuan3D-2mv.
+
+    The endpoint accepts front/left/back/right base64 images. A single `image`
+    value is treated as the front view.
+    """
+    logger.info("MV worker generating...")
+    params = request.dict()
+
+    uid = uuid.uuid4()
+    try:
+        file_path, uid = get_mv_worker().generate(uid, params)
+        return FileResponse(file_path)
+    except ValueError as e:
+        traceback.print_exc()
+        logger.error(f"Caught MV ValueError: {e}")
+        ret = {
+            "text": SERVER_ERROR_MSG,
+            "error_code": 1,
+        }
+        return JSONResponse(ret, status_code=404)
+    except torch.cuda.CudaError as e:
+        logger.error(f"Caught MV torch.cuda.CudaError: {e}")
+        ret = {
+            "text": SERVER_ERROR_MSG,
+            "error_code": 1,
+        }
+        return JSONResponse(ret, status_code=404)
+    except Exception as e:
+        logger.error(f"Caught MV Unknown Error: {e}")
+        traceback.print_exc()
+        ret = {
+            "text": SERVER_ERROR_MSG,
+            "error_code": 1,
+        }
+        return JSONResponse(ret, status_code=404)
+
+
 @app.post("/send", response_model=GenerationResponse, tags=["generation"])
 async def send_generation_task(request: GenerationRequest):
     """
@@ -140,6 +208,26 @@ async def send_generation_task(request: GenerationRequest):
     except Exception as e:
         logger.error(f"Failed to start generation thread: {e}")
         ret = {"error": "Failed to start generation"}
+        return JSONResponse(ret, status_code=500)
+
+
+@app.post("/send_mv", response_model=GenerationResponse, tags=["generation"])
+@app.post("/send/mv", response_model=GenerationResponse, tags=["generation"])
+async def send_mv_generation_task(request: MVGenerationRequest):
+    """
+    Send a Hunyuan3D-2mv generation task to be processed asynchronously.
+    """
+    logger.info("MV worker send...")
+    params = request.dict()
+
+    uid = uuid.uuid4()
+    try:
+        threading.Thread(target=get_mv_worker().generate, args=(uid, params,)).start()
+        ret = {"uid": str(uid)}
+        return JSONResponse(ret, status_code=200)
+    except Exception as e:
+        logger.error(f"Failed to start MV generation thread: {e}")
+        ret = {"error": "Failed to start MV generation"}
         return JSONResponse(ret, status_code=500)
 
 
@@ -193,6 +281,28 @@ async def status(uid: str):
         return JSONResponse(response, status_code=200)
 
 
+@app.get("/status_mv/{uid}", response_model=StatusResponse, tags=["status"])
+@app.get("/status/mv/{uid}", response_model=StatusResponse, tags=["status"])
+async def status_mv(uid: str):
+    """
+    Check the status of a Hunyuan3D-2mv generation task.
+    """
+    file_path = os.path.join(MV_SAVE_DIR, f'{uid}.glb')
+
+    if os.path.exists(file_path):
+        try:
+            base64_str = base64.b64encode(open(file_path, 'rb').read()).decode()
+            response = {'status': 'completed', 'model_base64': base64_str}
+            return JSONResponse(response, status_code=200)
+        except Exception as e:
+            logger.error(f"Error reading file {file_path}: {e}")
+            response = {'status': 'error', 'message': 'Failed to read generated file'}
+            return JSONResponse(response, status_code=500)
+
+    response = {'status': 'processing'}
+    return JSONResponse(response, status_code=200)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="0.0.0.0")
@@ -206,15 +316,23 @@ if __name__ == "__main__":
     parser.add_argument('--compile', action='store_true')
     parser.add_argument('--low_vram_mode', action='store_true')
     parser.add_argument('--cache-path', type=str, default='./gradio_cache')
+    parser.add_argument("--mv-model-path", type=str, default=os.environ.get("MV_MODEL_PATH", "/work/models/Hunyuan3D-2mv"))
+    parser.add_argument("--mv-subfolder", type=str, default=os.environ.get("MV_SUBFOLDER", "hunyuan3d-dit-v2-mv"))
+    parser.add_argument("--mv-cache-path", type=str, default=os.environ.get("MV_CACHE_PATH", "./gradio_cache/mv"))
+    parser.add_argument("--mv-limit-model-concurrency", type=int, default=1)
     args = parser.parse_args()
+    server_args = args
     logger.info(f"args: {args}")
 
     # Update SAVE_DIR based on cache-path argument
     SAVE_DIR = args.cache_path
+    MV_SAVE_DIR = args.mv_cache_path
     os.makedirs(SAVE_DIR, exist_ok=True)
+    os.makedirs(MV_SAVE_DIR, exist_ok=True)
     
 
     model_semaphore = asyncio.Semaphore(args.limit_model_concurrency)
+    mv_model_semaphore = asyncio.Semaphore(args.mv_limit_model_concurrency)
 
     worker = ModelWorker(
         model_path=args.model_path, 

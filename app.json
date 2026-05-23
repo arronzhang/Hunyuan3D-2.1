@@ -19,7 +19,10 @@
         "TORCH_CUDA_ARCH_LIST": "12.0",
         "PYOPENGL_PLATFORM": "egl",
         "DINO_CKPT_PATH": "/work/models/dinov2-giant",
-        "U2NET_HOME": "/work/models/rembg"
+        "U2NET_HOME": "/work/models/rembg",
+        "MV_MODEL_PATH": "/work/models/Hunyuan3D-2mv",
+        "MV_SUBFOLDER": "hunyuan3d-dit-v2-mv",
+        "MV_CACHE_PATH": "./gradio_cache/mv"
       }
     }
   ]

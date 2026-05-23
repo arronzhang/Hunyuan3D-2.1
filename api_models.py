@@ -1,8 +1,8 @@
 """
 Pydantic models for Hunyuan3D API server.
 """
-from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from typing import Optional
+from pydantic import BaseModel, Field, model_validator
 
 
 class GenerationRequest(BaseModel):
@@ -56,6 +56,59 @@ class GenerationRequest(BaseModel):
         ge=1000,
         le=100000
     )
+
+
+class MVGenerationRequest(BaseModel):
+    """Request model for Hunyuan3D-2mv multiview generation."""
+
+    image: Optional[str] = Field(
+        None,
+        description="Optional base64 encoded single image. Used as the front view if front is omitted."
+    )
+    front: Optional[str] = Field(None, description="Base64 encoded front view image")
+    back: Optional[str] = Field(None, description="Base64 encoded back view image")
+    left: Optional[str] = Field(None, description="Base64 encoded left view image")
+    right: Optional[str] = Field(None, description="Base64 encoded right view image")
+    remove_background: bool = Field(
+        True,
+        description="Whether to automatically remove background from input images"
+    )
+    seed: Optional[int] = Field(
+        None,
+        description="Random seed for reproducible generation. If omitted, a random seed is used.",
+        ge=0,
+        le=2**32-1
+    )
+    octree_resolution: int = Field(
+        256,
+        description="Resolution of the octree for mesh generation",
+        ge=64,
+        le=512
+    )
+    num_inference_steps: int = Field(
+        30,
+        description="Number of inference steps for Hunyuan3D-2mv generation",
+        ge=1,
+        le=50
+    )
+    guidance_scale: float = Field(
+        5.0,
+        description="Guidance scale for generation",
+        ge=0.1,
+        le=30.0
+    )
+    num_chunks: int = Field(
+        200000,
+        description="Number of chunks for mesh extraction",
+        ge=1000,
+        le=400000
+    )
+
+    @model_validator(mode="after")
+    def validate_images(self):
+        if not any([self.image, self.front, self.back, self.left, self.right]):
+            raise ValueError("Provide at least one of image, front, back, left, or right.")
+        return self
 
 
 class GenerationResponse(BaseModel):

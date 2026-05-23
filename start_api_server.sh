@@ -11,6 +11,9 @@ export PYOPENGL_PLATFORM="${PYOPENGL_PLATFORM:-egl}"
 export PYTHONPATH="$PWD:$PWD/hy3dpaint:$PWD/hy3dshape:${PYTHONPATH:-}"
 export DINO_CKPT_PATH="${DINO_CKPT_PATH:-/work/models/dinov2-giant}"
 export U2NET_HOME="${U2NET_HOME:-/work/models/rembg}"
+export MV_MODEL_PATH="${MV_MODEL_PATH:-/work/models/Hunyuan3D-2mv}"
+export MV_SUBFOLDER="${MV_SUBFOLDER:-hunyuan3d-dit-v2-mv}"
+export MV_CACHE_PATH="${MV_CACHE_PATH:-./gradio_cache/mv}"
 
 exec .venv/bin/python api_server.py \
   --host "${HOST:-0.0.0.0}" \
